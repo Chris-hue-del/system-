@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RULA 完整坐姿監測系統 v6</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+TC:wght@300;400;700&display=swap');
+
+:root {
+–bg:#070b0f; –panel:#0c1118; –border:#1b2736;
+–accent:#00e5ff; –green:#00ff88; –yellow:#ffcc00;
+–red:#ff2244; –orange:#ff8800; –dim:#3a4a5a; –text:#c8d8e8;
+–mono:‘Share Tech Mono’,monospace; –sans:‘Noto Sans TC’,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(–bg);color:var(–text);font-family:var(–sans);height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* HEADER */
+header{display:flex;align-items:center;justify-content:space-between;padding:9px 20px;border-bottom:1px solid var(–border);background:#090d12;flex-shrink:0;z-index:20;}
+.logo{font-family:var(–mono);font-size:12px;color:var(–accent);letter-spacing:3px;}
+.logo em{color:var(–dim);font-style:normal;}
+.badges{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.badge{font-family:var(–mono);font-size:9px;padding:2px 7px;border:1px solid var(–border);border-radius:2px;color:var(–dim);letter-spacing:1px;}
+.badge.live{border-color:var(–green);color:var(–green);display:none;}
+.badge.https{border-color:var(–yellow);color:var(–yellow);display:none;}
+.badge.ema-on{border-color:var(–accent);color:var(–accent);}
+
+/* MAIN GRID */
+main{display:grid;grid-template-columns:1fr 300px;flex:1;overflow:hidden;}
+
+/* CAMERA AREA */
+.cam-area{position:relative;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+/* Video mirror is applied via JS class; canvas has NO CSS transform — coords are handled in JS */
+#video{width:100%;height:100%;object-fit:cover;display:none;}
+#video.mirror{transform:scaleX(-1);}
+#canvas{position:absolute;inset:0;width:100%;height:100%;}
+.scanlines{position:absolute;inset:0;pointer-events:none;z-index:4;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.045) 2px,rgba(0,0,0,.045) 4px);}
+.danger-vfx{position:absolute;inset:0;pointer-events:none;z-index:5;border:0 solid var(–red);transition:border-width .15s;}
+.danger-vfx.on{border-width:6px;box-shadow:inset 0 0 100px rgba(255,34,68,.4);animation:redPulse .8s ease-in-out infinite;}
+@keyframes redPulse{0%,100%{box-shadow:inset 0 0 80px rgba(255,34,68,.35);}50%{box-shadow:inset 0 0 150px rgba(255,34,68,.65);}}
+.warn-banner{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(255,34,68,.92);color:#fff;font-family:var(–mono);font-size:12px;letter-spacing:2px;padding:9px 28px;clip-path:polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%);z-index:8;display:none;animation:blink .6s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.65}}
+.fps-tag{position:absolute;top:10px;right:10px;font-family:var(–mono);font-size:10px;color:rgba(0,229,255,.45);z-index:8;letter-spacing:1px;}
+.no-detect{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:var(–mono);font-size:11px;color:rgba(0,229,255,.35);letter-spacing:2px;text-align:center;z-index:6;display:none;line-height:1.8;}
+
+/* Side display toggle */
+.side-toggle{display:flex;gap:0;margin-bottom:0;flex-shrink:0;}
+.side-tab{font-family:var(–mono);font-size:9px;padding:6px 10px;cursor:pointer;letter-spacing:1px;border:none;background:#0a0f15;color:var(–dim);transition:all .2s;flex:1;text-align:center;border-bottom:1px solid var(–border);}
+.side-tab.active{background:rgba(0,229,255,.08);color:var(–accent);border-bottom:1px solid var(–accent);}
+
+/* LAUNCH SCREEN */
+#launchScreen{position:absolute;inset:0;z-index:30;background:#040810;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow-y:auto;}
+.launch-grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(0,229,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.035) 1px,transparent 1px);background-size:44px 44px;}
+.launch-inner{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;max-width:520px;width:90%;padding:20px 0 30px;}
+.app-icon{font-size:52px;line-height:1;filter:drop-shadow(0 0 24px var(–accent));margin-bottom:14px;animation:iconFloat 3s ease-in-out infinite;}
+@keyframes iconFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-6px);}}
+.app-title{font-family:var(–mono);font-size:18px;color:var(–accent);letter-spacing:5px;text-transform:uppercase;margin-bottom:4px;}
+.app-sub{font-family:var(–mono);font-size:10px;color:var(–dim);letter-spacing:2px;margin-bottom:28px;}
+#httpsCard{width:100%;background:rgba(255,136,0,.08);border:1px solid rgba(255,136,0,.4);border-radius:4px;padding:12px 16px;margin-bottom:16px;display:none;}
+.https-title{font-family:var(–mono);font-size:11px;color:var(–orange);letter-spacing:1px;margin-bottom:6px;}
+.https-body{font-size:11px;color:#b0a080;line-height:1.7;}
+.https-body code{background:rgba(255,136,0,.12);color:var(–orange);padding:1px 5px;border-radius:2px;font-family:var(–mono);font-size:10px;}
+
+.guide-card{width:100%;background:rgba(0,229,255,.045);border:1px solid rgba(0,229,255,.18);border-radius:4px;padding:14px 16px;margin-bottom:20px;}
+.guide-title{font-family:var(–mono);font-size:10px;color:var(–accent);letter-spacing:2px;margin-bottom:10px;}
+.guide-steps{display:flex;flex-direction:column;gap:7px;}
+.guide-step{display:flex;align-items:flex-start;gap:10px;font-size:11px;color:#ffffff;line-height:1.55;}
+.step-num{font-family:var(–mono);font-size:10px;color:var(–accent);background:rgba(0,229,255,.12);border:1px solid rgba(0,229,255,.25);border-radius:2px;padding:1px 6px;flex-shrink:0;margin-top:1px;}
+
+#startBtn{position:relative;background:transparent;border:1px solid var(–accent);color:var(–accent);font-family:var(–mono);font-size:13px;letter-spacing:4px;padding:14px 48px;cursor:pointer;text-transform:uppercase;clip-path:polygon(10px 0%,100% 0%,calc(100% - 10px) 100%,0% 100%);transition:all .2s;margin-bottom:10px;width:100%;}
+#startBtn:hover:not(:disabled){background:rgba(0,229,255,.1);box-shadow:0 0 28px rgba(0,229,255,.3);}
+#startBtn:disabled{opacity:.5;cursor:not-allowed;}
+#startBtn .btn-icon{margin-right:8px;}
+#startBtn.loading .btn-icon{display:inline-block;animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#errorCard{width:100%;background:rgba(255,34,68,.07);border:1px solid rgba(255,34,68,.35);border-radius:4px;padding:14px 16px;display:none;margin-top:4px;}
+.err-header{display:flex;align-items:center;gap:8px;font-family:var(–mono);font-size:11px;color:var(–red);letter-spacing:1px;margin-bottom:8px;}
+.err-code{font-family:var(–mono);font-size:10px;color:#cc4455;background:rgba(255,34,68,.12);padding:2px 8px;border-radius:2px;margin-bottom:6px;}
+.err-msg{font-size:11px;color:#cc9090;line-height:1.65;margin-bottom:8px;}
+.err-fix{font-size:10px;color:var(–dim);line-height:1.7;}
+.err-fix strong{color:var(–yellow);font-weight:normal;}
+
+/* Cal overlay */
+#calOverlay{position:absolute;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;background:rgba(4,8,16,.85);backdrop-filter:blur(2px);}
+.cal-box{border:1px solid var(–accent);background:rgba(0,10,22,.95);padding:28px 36px;border-radius:4px;text-align:center;max-width:360px;width:90%;}
+.cal-title{font-family:var(–mono);font-size:13px;color:var(–accent);letter-spacing:4px;margin-bottom:6px;text-transform:uppercase;}
+.cal-sub{font-size:11px;color:#ffffff;margin-bottom:18px;line-height:1.6;}
+.cal-status{font-family:var(–mono);font-size:11px;color:var(–yellow);letter-spacing:2px;margin-bottom:14px;min-height:18px;}
+.cal-body-check{display:flex;gap:10px;margin-bottom:18px;justify-content:center;flex-wrap:wrap;}
+.check-item{display:flex;flex-direction:column;align-items:center;gap:5px;font-family:var(–mono);font-size:9px;color:#ffffff;letter-spacing:1px;}
+.check-dot{width:12px;height:12px;border-radius:50%;border:1px solid var(–dim);background:transparent;transition:background .3s,border-color .3s;}
+.check-dot.ok{background:var(–green);border-color:var(–green);box-shadow:0 0 8px var(–green);}
+.check-dot.bad{background:var(–red);border-color:var(–red);}
+.cal-countdown{font-family:var(–mono);font-size:56px;color:var(–accent);line-height:1;margin:6px 0 14px;display:none;text-shadow:0 0 30px var(–accent);animation:countPulse 1s ease-in-out infinite;}
+@keyframes countPulse{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.1);opacity:.8;}}
+.cal-done-msg{font-family:var(–mono);font-size:14px;color:var(–green);letter-spacing:3px;display:none;margin-bottom:10px;text-shadow:0 0 16px var(–green);}
+#calStartBtn{background:transparent;border:1px solid var(–accent);color:var(–accent);font-family:var(–mono);font-size:11px;letter-spacing:3px;padding:10px 0;cursor:pointer;text-transform:uppercase;clip-path:polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%);transition:all .2s;width:100%;margin-bottom:8px;}
+#calStartBtn:hover:not(:disabled){background:rgba(0,229,255,.1);box-shadow:0 0 16px rgba(0,229,255,.25);}
+#calStartBtn:disabled{opacity:.4;cursor:not-allowed;}
+#calCancelBtn{background:transparent;border:none;color:#aabbcc;font-family:var(–mono);font-size:9px;letter-spacing:2px;cursor:pointer;padding:4px;text-decoration:underline;}
+#calCancelBtn:hover{color:#ffffff;}
+
+/* RIGHT PANEL */
+.side-panel{background:var(–panel);border-left:1px solid var(–border);display:flex;flex-direction:column;overflow:hidden;}
+.panel-page{flex:1;overflow-y:auto;overflow-x:hidden;display:none;}
+.panel-page.active{display:block;}
+.panel-page::-webkit-scrollbar{width:3px;}
+.panel-page::-webkit-scrollbar-thumb{background:var(–border);}
+.ps{padding:12px 14px;border-bottom:1px solid var(–border);}
+.ps:last-child{border-bottom:none;}
+.slabel{font-family:var(–mono);font-size:8px;letter-spacing:3px;color:var(–dim);text-transform:uppercase;margin-bottom:9px;}
+
+/* Angle items */
+.angle-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.angle-item{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;}
+.angle-item.full{grid-column:1/-1;}
+.angle-header{display:flex;justify-content:space-between;align-items:baseline;}
+.angle-name{font-size:9px;color:var(–dim);font-family:var(–mono);letter-spacing:1px;}
+.angle-val{font-family:var(–mono);font-size:18px;font-weight:bold;color:var(–green);transition:color .3s;line-height:1;}
+.angle-val.warn{color:var(–yellow);}
+.angle-val.danger{color:var(–red);}
+.angle-val.na{color:var(–dim);font-size:14px;}
+.angle-unit{font-size:9px;color:var(–dim);}
+.angle-raw{font-family:var(–mono);font-size:8px;color:var(–dim);margin-top:1px;}
+.bar-bg{height:3px;background:#1a2430;border-radius:2px;overflow:hidden;}
+.bar-fill{height:100%;background:var(–green);border-radius:2px;transition:width .2s,background .3s;width:0%;}
+.bar-fill.warn{background:var(–yellow);}
+.bar-fill.danger{background:var(–red);}
+.ema-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
+.ema-label{font-family:var(–mono);font-size:8px;color:var(–dim);letter-spacing:1px;}
+.ema-toggle{font-family:var(–mono);font-size:8px;padding:2px 7px;border:1px solid var(–border);border-radius:2px;color:var(–dim);background:transparent;cursor:pointer;letter-spacing:1px;transition:all .2s;}
+.ema-toggle.active{border-color:var(–accent);color:var(–accent);background:rgba(0,229,255,.06);}
+
+/* Score chips */
+.score-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px;}
+.score-chip{background:#0a0f15;border:1px solid var(–border);border-radius:3px;padding:7px 6px;text-align:center;transition:border-color .3s;}
+.score-chip.warn{border-color:var(–yellow);}
+.score-chip.danger{border-color:var(–red);}
+.score-chip.good{border-color:var(–green);}
+.chip-lbl{font-family:var(–mono);font-size:7px;color:var(–dim);letter-spacing:1px;margin-bottom:2px;}
+.chip-val{font-family:var(–mono);font-size:18px;color:var(–green);line-height:1;transition:color .3s;}
+.chip-val.warn{color:var(–yellow);}
+.chip-val.danger{color:var(–red);}
+.chip-val.na{color:var(–dim);font-size:14px;}
+
+/* Calibration panel */
+.cal-state-card{background:#0a0f15;border:1px solid var(–border);border-radius:3px;padding:8px 10px;font-family:var(–mono);font-size:9px;color:var(–dim);line-height:1.6;}
+.cal-state-card.calibrated{border-color:var(–green);color:var(–green);}
+.cal-offset-row{display:flex;justify-content:space-between;margin-top:5px;font-size:8px;color:var(–dim);flex-wrap:wrap;gap:4px;}
+.cal-offset-val{color:var(–accent);}
+#triggerCalBtn{width:100%;background:transparent;border:1px solid var(–accent);color:var(–accent);font-family:var(–mono);font-size:10px;letter-spacing:2px;padding:9px 16px;cursor:pointer;text-transform:uppercase;clip-path:polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%);transition:all .2s;margin-top:8px;}
+#triggerCalBtn:hover:not(:disabled){background:rgba(0,229,255,.08);box-shadow:0 0 16px rgba(0,229,255,.2);}
+#triggerCalBtn:disabled{opacity:.35;cursor:not-allowed;}
+
+/* RULA grand card */
+.rula-grand{background:#0a0f15;border:1px solid var(–border);padding:12px;border-radius:3px;display:flex;align-items:center;gap:12px;transition:border-color .3s;margin-bottom:8px;}
+.rula-grand.good{border-color:var(–green);}
+.rula-grand.warn{border-color:var(–yellow);}
+.rula-grand.danger{border-color:var(–red);}
+.rula-grand-num{font-family:var(–mono);font-size:44px;font-weight:bold;color:var(–green);line-height:1;min-width:48px;text-align:center;transition:color .3s;}
+.rula-grand-num.warn{color:var(–yellow);}
+.rula-grand-num.danger{color:var(–red);}
+.rula-grand-num.na{color:var(–dim);font-size:28px;}
+.rula-info{flex:1;}
+.rula-lv{font-size:11px;font-weight:700;color:var(–green);transition:color .3s;margin-bottom:3px;}
+.rula-lv.warn{color:var(–yellow);}
+.rula-lv.danger{color:var(–red);}
+.rula-act{font-size:9px;color:#ffffff;font-family:var(–mono);line-height:1.5;}
+.rula-ab-row{display:flex;gap:8px;font-family:var(–mono);font-size:9px;color:var(–dim);}
+.rula-ab-val{color:var(–accent);}
+
+/* Timers */
+.t-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.t-lbl{font-family:var(–mono);font-size:9px;color:var(–dim);letter-spacing:1px;}
+.t-val{font-family:var(–mono);font-size:12px;color:var(–text);}
+.t-val.bad{color:var(–red);}
+.beep-bar-bg{height:5px;background:#1a2430;border-radius:3px;overflow:hidden;margin-top:2px;}
+.beep-bar-fill{height:100%;background:var(–yellow);border-radius:3px;transition:width .15s linear,background .3s;width:0%;}
+.beep-bar-fill.alert{background:var(–red);}
+.bad-streak-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.bad-streak-label{font-family:var(–mono);font-size:9px;color:var(–dim);letter-spacing:1px;}
+.bad-streak-val{font-family:var(–mono);font-size:11px;color:var(–yellow);transition:color .3s;}
+.bad-streak-val.fired{color:var(–red);}
+
+/* Chart */
+#chartCanvas{width:100%;height:72px;display:block;background:#0a0f15;border:1px solid var(–border);border-radius:3px;}
+.chart-legend{display:flex;gap:8px;margin-top:5px;flex-wrap:wrap;}
+.leg{display:flex;align-items:center;gap:3px;font-family:var(–mono);font-size:8px;}
+.leg-dot{width:14px;height:2px;}
+
+/* Export */
+.export-stats{display:flex;justify-content:space-between;font-family:var(–mono);font-size:9px;color:var(–dim);margin-bottom:8px;padding:6px 8px;background:#0a0f15;border:1px solid var(–border);border-radius:3px;}
+.export-stat-val{color:var(–accent);}
+#exportBtn{width:100%;background:transparent;border:1px solid var(–green);color:var(–green);font-family:var(–mono);font-size:10px;letter-spacing:3px;padding:9px 16px;cursor:pointer;text-transform:uppercase;clip-path:polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%);transition:all .2s;}
+#exportBtn:hover:not(:disabled){background:rgba(0,255,136,.08);box-shadow:0 0 18px rgba(0,255,136,.2);}
+#exportBtn:disabled{opacity:.35;cursor:not-allowed;}
+
+/* Threshold table */
+.th-section{margin-bottom:8px;}
+.th-section-title{font-family:var(–mono);font-size:8px;color:var(–accent);letter-spacing:2px;margin-bottom:4px;}
+.th-row{display:flex;justify-content:space-between;font-family:var(–mono);font-size:9px;margin-bottom:3px;}
+.th-n{color:var(–dim);}
+.th-v{color:var(–accent);}
+
+/* Camera flip button */
+#flipBtn{display:none;align-items:center;gap:6px;background:transparent;border:1px solid var(–border);color:var(–dim);font-family:var(–mono);font-size:9px;letter-spacing:1px;padding:4px 10px;border-radius:2px;cursor:pointer;transition:all .2s;white-space:nowrap;}
+#flipBtn:hover:not(:disabled){border-color:var(–accent);color:var(–accent);background:rgba(0,229,255,.06);}
+#flipBtn:disabled{opacity:.35;cursor:not-allowed;}
+#flipBtn.switching{opacity:.5;cursor:not-allowed;}
+#flipBtn svg{width:13px;height:13px;flex-shrink:0;transition:transform .4s;}
+#flipBtn.switching svg{animation:flipSpin .5s ease-in-out;}
+@keyframes flipSpin{0%{transform:rotateY(0deg);}100%{transform:rotateY(180deg);}}
+
+/* rear-cam class removed — mirror handled entirely in JS via lmPx() */
+
+/* Side toggle */
+.active-side-indicator{display:flex;gap:6px;align-items:center;font-family:var(–mono);font-size:8px;color:var(–dim);padding:5px 14px;border-bottom:1px solid var(–border);background:#090d12;flex-shrink:0;}
+.side-dot{width:6px;height:6px;border-radius:50%;background:var(–accent);}
+
+/* Arm detection notice */
+.arm-notice{background:rgba(0,229,255,.04);border:1px solid rgba(0,229,255,.12);border-radius:3px;padding:7px 10px;font-family:var(–mono);font-size:8px;color:var(–dim);line-height:1.6;margin-bottom:8px;}
+.arm-notice strong{color:var(–accent);}
+</style>
+
+</head>
+<body>
+
+<header>
+  <div class="logo">RULA<em>//</em>FULL<em>_</em>BODY<em>_</em>MONITOR <em style="font-size:10px;margin-left:4px">v6</em></div>
+  <div class="badges">
+    <div class="badge" id="statusBadge">OFFLINE</div>
+    <div class="badge live" id="liveBadge">● LIVE</div>
+    <div class="badge https" id="httpsBadge">⚠ HTTP</div>
+    <div class="badge ema-on" id="emaBadge">EMA α=0.2</div>
+    <div class="badge" id="calBadge" style="display:none;border-color:var(--green);color:var(--green)">⊕ CAL</div>
+    <div class="badge">RULA 2000</div>
+    <button id="flipBtn" onclick="flipCamera()" title="切換前後鏡頭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 7h-9"/><path d="M14 17H5"/><polyline points="15 2 20 7 15 12"/><polyline points="9 22 4 17 9 12"/>
+      </svg>
+      切換鏡頭
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- CAMERA AREA -->
+
+  <div class="cam-area" id="camArea">
+    <div id="launchScreen">
+      <div class="launch-grid"></div>
+      <div class="launch-inner">
+        <div class="app-icon">📐</div>
+        <div class="app-title">完整坐姿監測</div>
+        <div class="app-sub">RULA Full · Group A + B · MediaPipe · EMA · v6</div>
+        <div id="httpsCard">
+          <div class="https-title">⚠ 安全連線提醒</div>
+          <div class="https-body">目前頁面使用 <code>HTTP</code> 協定。<br>攝影機 API 在非安全環境下可能被封鎖。<br>建議改用：<code>https://</code> 或 <code>localhost</code></div>
+        </div>
+        <div class="guide-card">
+          <div class="guide-title">📋 使用引導</div>
+          <div class="guide-steps">
+            <div class="guide-step"><span class="step-num">01</span><span>點擊「啟動攝影機」，允許瀏覽器攝影機權限</span></div>
+            <div class="guide-step"><span class="step-num">02</span><span>確保<strong style="color:var(--accent)">耳、肩、肘、腕、髖</strong>皆在畫面中（完整上半身）</span></div>
+            <div class="guide-step"><span class="step-num">03</span><span>點選「開始校準」建立基準，系統自動計算完整 RULA 分數</span></div>
+          </div>
+        </div>
+        <button id="startBtn" onclick="handleStart()"><span class="btn-icon">▶</span> 啟動攝影機</button>
+        <div id="errorCard">
+          <div class="err-header"><span>🚫</span><span id="errTitle">無法存取攝影機</span></div>
+          <div class="err-code" id="errCode"></div>
+          <div class="err-msg" id="errMsg"></div>
+          <div class="err-fix" id="errFix"></div>
+        </div>
+      </div>
+    </div>
+
+```
+<video id="video" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
+<div class="scanlines"></div>
+<div class="danger-vfx" id="dangerVfx"></div>
+<div class="warn-banner" id="warnBanner">⚠ 坐姿不良 — 請立即調整</div>
+<div class="no-detect" id="noDetect">DETECTING…<br>請確認上半身在畫面中</div>
+<div class="fps-tag" id="fpsTag">--</div>
+
+<!-- Calibration overlay -->
+<div id="calOverlay">
+  <div class="cal-box">
+    <div class="cal-title">⊕ 姿勢校準</div>
+    <div class="cal-sub">系統將捕捉您的「標準坐姿」作為 0° 基準<br>請確認上半身全入鏡後再按開始</div>
+    <div class="cal-status" id="calStatus">— 偵測入鏡中 —</div>
+    <div class="cal-body-check">
+      <div class="check-item"><div class="check-dot" id="chkEar"></div><span>耳朵</span></div>
+      <div class="check-item"><div class="check-dot" id="chkSh"></div><span>肩膀</span></div>
+      <div class="check-item"><div class="check-dot" id="chkElb"></div><span>手肘</span></div>
+      <div class="check-item"><div class="check-dot" id="chkWr"></div><span>手腕</span></div>
+      <div class="check-item"><div class="check-dot" id="chkHip"></div><span>髖部</span></div>
+    </div>
+    <div class="cal-countdown" id="calCountdown">3</div>
+    <div class="cal-done-msg" id="calDoneMsg">✓ 校準完成</div>
+    <button id="calStartBtn" onclick="startCalibration()" disabled>⊕ 開始校準（需全身入鏡）</button>
+    <button id="calCancelBtn" onclick="closeCalOverlay()">取消</button>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- RIGHT PANEL -->
+
+  <div class="side-panel">
+    <div class="side-toggle">
+      <button class="side-tab active" id="tabAngles" onclick="switchTab('angles')">角度</button>
+      <button class="side-tab" id="tabRula" onclick="switchTab('rula')">RULA</button>
+      <button class="side-tab" id="tabData" onclick="switchTab('data')">數據</button>
+    </div>
+
+```
+<!-- TAB: ANGLES -->
+<div class="panel-page active" id="pageAngles">
+
+  <!-- Group B: Neck & Trunk -->
+  <div class="ps">
+    <div class="slabel">Group B — 頸幹腿部</div>
+    <div class="angle-item">
+      <div class="angle-header">
+        <span class="angle-name">頸部前傾</span>
+        <span><span class="angle-val" id="neckVal">--</span><span class="angle-unit"> °</span></span>
+      </div>
+      <div class="angle-raw" id="neckRawLbl">原始: -- °</div>
+      <div class="bar-bg"><div class="bar-fill" id="neckBar"></div></div>
+    </div>
+    <div class="angle-item" style="margin-bottom:0">
+      <div class="angle-header">
+        <span class="angle-name">軀幹彎曲</span>
+        <span><span class="angle-val" id="trunkVal">--</span><span class="angle-unit"> °</span></span>
+      </div>
+      <div class="angle-raw" id="trunkRawLbl">原始: -- °</div>
+      <div class="bar-bg"><div class="bar-fill" id="trunkBar"></div></div>
+    </div>
+  </div>
+
+  <!-- Group A: Upper arm / lower arm / wrist -->
+  <div class="ps">
+    <div class="slabel">Group A — 上肢</div>
+    <div class="arm-notice">
+      <strong>偵測說明：</strong>手肘與手腕需入鏡才能計算 Group A。<br>若未偵測到則以中立分數替代。
+    </div>
+    <div class="angle-grid">
+      <div class="angle-item">
+        <div class="angle-header">
+          <span class="angle-name">上臂 (L)</span>
+          <span><span class="angle-val" id="uaLVal">--</span><span class="angle-unit"> °</span></span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" id="uaLBar"></div></div>
+      </div>
+      <div class="angle-item">
+        <div class="angle-header">
+          <span class="angle-name">上臂 (R)</span>
+          <span><span class="angle-val" id="uaRVal">--</span><span class="angle-unit"> °</span></span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" id="uaRBar"></div></div>
+      </div>
+      <div class="angle-item">
+        <div class="angle-header">
+          <span class="angle-name">下臂 (L)</span>
+          <span><span class="angle-val" id="laLVal">--</span><span class="angle-unit"> °</span></span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" id="laLBar"></div></div>
+      </div>
+      <div class="angle-item">
+        <div class="angle-header">
+          <span class="angle-name">下臂 (R)</span>
+          <span><span class="angle-val" id="laRVal">--</span><span class="angle-unit"> °</span></span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" id="laRBar"></div></div>
+      </div>
+      <div class="angle-item">
+        <div class="angle-header">
+          <span class="angle-name">手腕 (L)</span>
+          <span><span class="angle-val" id="wrLVal">--</span><span class="angle-unit"> °</span></span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" id="wrLBar"></div></div>
+      </div>
+      <div class="angle-item">
+        <div class="angle-header">
+          <span class="angle-name">手腕 (R)</span>
+          <span><span class="angle-val" id="wrRVal">--</span><span class="angle-unit"> °</span></span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" id="wrRBar"></div></div>
+      </div>
+    </div>
+    <div class="ema-row">
+      <span class="ema-label">EMA 濾波 (α=0.2)</span>
+      <button class="ema-toggle active" id="emaToggle" onclick="toggleEMA()">ON</button>
+    </div>
+  </div>
+
+  <!-- Cal -->
+  <div class="ps">
+    <div class="slabel">姿勢校準</div>
+    <div class="cal-state-card" id="calStateCard">○ 尚未校準 — 使用垂直絕對角度</div>
+    <div class="cal-offset-row" id="calOffsetRow" style="display:none">
+      <span>頸 <span class="cal-offset-val" id="calNeckOff">--°</span></span>
+      <span>幹 <span class="cal-offset-val" id="calTrunkOff">--°</span></span>
+    </div>
+    <button id="triggerCalBtn" onclick="openCalOverlay()" disabled>⊕ 開始校準</button>
+  </div>
+</div>
+
+<!-- TAB: RULA -->
+<div class="panel-page" id="pageRula">
+  <div class="ps">
+    <div class="slabel">RULA 完整評分</div>
+    <div class="rula-grand" id="rulaCard">
+      <div class="rula-grand-num na" id="rulaNum">-</div>
+      <div class="rula-info">
+        <div class="rula-lv" id="rulaLv">等待偵測</div>
+        <div class="rula-act" id="rulaAct">請啟動攝影機</div>
+      </div>
+    </div>
+    <div class="rula-ab-row">
+      <span>Group A: <span class="rula-ab-val" id="rulaA">-</span></span>
+      <span>Group B: <span class="rula-ab-val" id="rulaB">-</span></span>
+      <span>Grand: <span class="rula-ab-val" id="rulaGrand">-</span></span>
+    </div>
+  </div>
+
+  <div class="ps">
+    <div class="slabel">各部位評分</div>
+    <div class="score-chips">
+      <div class="score-chip" id="chipNeck">
+        <div class="chip-lbl">頸部</div>
+        <div class="chip-val na" id="chipNeckVal">-</div>
+      </div>
+      <div class="score-chip" id="chipTrunk">
+        <div class="chip-lbl">軀幹</div>
+        <div class="chip-val na" id="chipTrunkVal">-</div>
+      </div>
+      <div class="score-chip" id="chipLeg">
+        <div class="chip-lbl">腿部</div>
+        <div class="chip-val na" id="chipLegVal">1</div>
+      </div>
+      <div class="score-chip" id="chipUA">
+        <div class="chip-lbl">上臂</div>
+        <div class="chip-val na" id="chipUAVal">-</div>
+      </div>
+      <div class="score-chip" id="chipLA">
+        <div class="chip-lbl">下臂</div>
+        <div class="chip-val na" id="chipLAVal">-</div>
+      </div>
+      <div class="score-chip" id="chipWR">
+        <div class="chip-lbl">手腕</div>
+        <div class="chip-val na" id="chipWRVal">-</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ps">
+    <div class="slabel">姿勢計時</div>
+    <div class="t-row"><span class="t-lbl">SESSION</span><span class="t-val" id="tSession">00:00</span></div>
+    <div class="t-row"><span class="t-lbl">不良姿勢</span><span class="t-val bad" id="tBad">00:00</span></div>
+    <div class="t-row"><span class="t-lbl">不良比例</span><span class="t-val" id="tPct">--%</span></div>
+    <div class="bad-streak-row" style="margin-top:4px">
+      <span class="bad-streak-label">連續不良（觸發≥3s）</span>
+      <span class="bad-streak-val" id="streakVal">0.0s</span>
+    </div>
+    <div class="beep-bar-bg"><div class="beep-bar-fill" id="beepBar"></div></div>
+    <div style="display:flex;justify-content:space-between;margin-top:3px">
+      <span style="font-family:var(--mono);font-size:8px;color:var(--dim)">0s</span>
+      <span style="font-family:var(--mono);font-size:8px;color:var(--yellow)">嗶聲 @3s</span>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: DATA -->
+<div class="panel-page" id="pageData">
+  <div class="ps">
+    <div class="slabel">角度歷史（近60幀）</div>
+    <canvas id="chartCanvas" width="272" height="72"></canvas>
+    <div class="chart-legend">
+      <div class="leg"><div class="leg-dot" style="background:var(--accent)"></div>頸部</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--yellow)"></div>軀幹</div>
+      <div class="leg"><div class="leg-dot" style="background:#ff8800"></div>上臂(avg)</div>
+      <div class="leg"><div class="leg-dot" style="background:#cc44ff"></div>下臂(avg)</div>
+      <div class="leg"><div class="leg-dot" style="background:rgba(255,34,68,.5)"></div>警告線</div>
+    </div>
+  </div>
+
+  <div class="ps">
+    <div class="slabel">數據報告匯出</div>
+    <div class="export-stats">
+      <span>已記錄</span>
+      <span class="export-stat-val" id="recordCount">0 幀</span>
+    </div>
+    <button id="exportBtn" onclick="exportCSV()" disabled>⬇ 下載完整 RULA 報告 CSV</button>
+  </div>
+
+  <div class="ps">
+    <div class="slabel">RULA 門檻參考</div>
+    <div class="th-section">
+      <div class="th-section-title">— GROUP B —</div>
+      <div class="th-row"><span class="th-n">頸部 正常</span><span class="th-v">&lt; 10°</span></div>
+      <div class="th-row"><span class="th-n">頸部 警告</span><span class="th-v">10–20°</span></div>
+      <div class="th-row"><span class="th-n">頸部 危險</span><span class="th-v">&gt; 20°</span></div>
+      <div class="th-row"><span class="th-n">軀幹 正常</span><span class="th-v">&lt; 10°</span></div>
+      <div class="th-row"><span class="th-n">軀幹 警告</span><span class="th-v">10–20°</span></div>
+      <div class="th-row"><span class="th-n">軀幹 危險</span><span class="th-v">&gt; 20°</span></div>
+    </div>
+    <div class="th-section">
+      <div class="th-section-title">— GROUP A —</div>
+      <div class="th-row"><span class="th-n">上臂 中立</span><span class="th-v">0–20°</span></div>
+      <div class="th-row"><span class="th-n">上臂 警告</span><span class="th-v">20–45°</span></div>
+      <div class="th-row"><span class="th-n">上臂 危險</span><span class="th-v">&gt; 45°</span></div>
+      <div class="th-row"><span class="th-n">下臂 中立</span><span class="th-v">60–100°</span></div>
+      <div class="th-row"><span class="th-n">下臂 警告</span><span class="th-v">0–60° / &gt;100°</span></div>
+      <div class="th-row"><span class="th-n">手腕 中立</span><span class="th-v">&lt; 15°</span></div>
+      <div class="th-row"><span class="th-n">手腕 危險</span><span class="th-v">&gt; 15°</span></div>
+    </div>
+  </div>
+</div>
+```
+
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+<script>
+// ═══════════════════════════════════════════
+//  Constants
+// ═══════════════════════════════════════════
+const NECK_WARN=10, NECK_DANGER=20, TRUNK_WARN=10, TRUNK_DANGER=20;
+const UA_WARN=20, UA_DANGER=45;        // upper arm from torso vertical
+const LA_LOW=60, LA_HIGH=100;          // lower arm: ideal 60-100° elbow
+const WR_WARN=15;                       // wrist deviation
+const BEEP_THRESH=3, BEEP_CD=5, EMA_ALPHA=0.2, HIST_LEN=60, LOG_MAX=10000;
+
+// ═══════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════
+let sessionStart=null, badStart=null, badTotal=0, lastBeep=0;
+let prevFrameTs=Date.now(), fps=0;
+let neckHist=[], trunkHist=[], uaHist=[], laHist=[];
+let audioCtx=null;
+let emaEnabled=true;
+let emaNeck=null, emaTrunk=null;
+let emaUAL=null, emaUAR=null, emaLAL=null, emaLAR=null, emaWRL=null, emaWRR=null;
+let dataLog=[];
+let currentTab='angles';
+
+// Camera management
+let currentFacingMode='user';
+let activeStream=null;
+let activePose=null;
+let isSwitching=false;
+let rafId=null;
+let poseReady=false;
+let frameRunning=false;
+
+// Calibration
+let calPhase='idle';
+let calNeckBase=0, calTrunkBase=0;
+let calCountVal=3, calTimer=null;
+let calFrameBuf=[];
+let calRefShM=null, calRefEarM=null, calRefHiM=null;
+
+// ═══════════════════════════════════════════
+//  Tab switching
+// ═══════════════════════════════════════════
+function switchTab(name){
+  currentTab=name;
+  ['angles','rula','data'].forEach(t=>{
+    document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active',t===name);
+    document.getElementById('page'+t.charAt(0).toUpperCase()+t.slice(1)).classList.toggle('active',t===name);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  Env check
+// ═══════════════════════════════════════════
+(function(){
+  const isSecure=location.protocol==='https:'||['localhost','127.0.0.1','::1'].includes(location.hostname);
+  if(!isSecure){document.getElementById('httpsCard').style.display='block';document.getElementById('httpsBadge').style.display='block';}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    showError('API 不支援','NotSupportedError','此瀏覽器不支援攝影機 API。','建議使用 Chrome 80+ / Firefox 78+ / Safari 14+（HTTPS）');
+    document.getElementById('startBtn').disabled=true;
+  }
+})();
+
+// ═══════════════════════════════════════════
+//  Error helpers
+// ═══════════════════════════════════════════
+const ERR={
+  NotAllowedError:{title:'攝影機權限被拒絕',msg:'請在網址列 🔒 中允許攝影機存取後重新整理。'},
+  NotFoundError:{title:'找不到攝影機',msg:'請確認攝影機已連接並安裝驅動。'},
+  NotReadableError:{title:'攝影機被其他程式佔用',msg:'請關閉 Zoom/Teams 等程式後重試。'},
+  SecurityError:{title:'安全性限制',msg:'請使用 https:// 或 localhost 開啟此頁面。'},
+  DEFAULT:{title:'未知錯誤',msg:'請重新整理頁面後再試。'}
+};
+function showError(title,code,msg,fix){
+  document.getElementById('errorCard').style.display='block';
+  document.getElementById('errTitle').textContent=title;
+  document.getElementById('errCode').textContent=code;
+  document.getElementById('errMsg').textContent=msg;
+  document.getElementById('errFix').innerHTML=fix?'<strong>修復：</strong>'+fix:'';
+  const b=document.getElementById('startBtn');
+  b.disabled=false;b.classList.remove('loading');
+  b.innerHTML='<span class="btn-icon">↺</span> 重試';
+}
+function hideError(){document.getElementById('errorCard').style.display='none';}
+
+// ═══════════════════════════════════════════
+//  Pose init & RAF loop
+// ═══════════════════════════════════════════
+async function initPose(){
+  const pose=new Pose({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+  pose.setOptions({modelComplexity:1,smoothLandmarks:true,enableSegmentation:false,minDetectionConfidence:0.6,minTrackingConfidence:0.5});
+  pose.onResults(onPoseResults);
+  await pose.initialize();
+  activePose=pose;
+  poseReady=true;
+}
+
+function startRAFLoop(){
+  stopRAFLoop();
+  const video=document.getElementById('video');
+  async function tick(){
+    if(!poseReady||!activePose||!activeStream){rafId=requestAnimationFrame(tick);return;}
+    if(!frameRunning&&video.readyState>=HTMLMediaElement.HAVE_CURRENT_DATA){
+      frameRunning=true;
+      try{await activePose.send({image:video});}catch(e){}
+      frameRunning=false;
+    }
+    rafId=requestAnimationFrame(tick);
+  }
+  rafId=requestAnimationFrame(tick);
+}
+
+function stopRAFLoop(){
+  if(rafId!==null){cancelAnimationFrame(rafId);rafId=null;}
+  frameRunning=false;
+}
+
+async function hardStopStream(stream){
+  if(!stream)return;
+  const tracks=stream.getTracks();
+  const video=document.getElementById('video');
+  if(video.srcObject===stream)video.srcObject=null;
+  await Promise.all(tracks.map(t=>new Promise(resolve=>{
+    if(t.readyState==='ended'){resolve();return;}
+    t.addEventListener('ended',resolve,{once:true});
+    t.stop();
+    setTimeout(resolve,500);
+  })));
+}
+
+async function acquireStream(facingMode){
+  const isRear=facingMode==='environment';
+  const list=isRear
+    ?[{video:{facingMode:{exact:'environment'},width:{ideal:1280},height:{ideal:720}}},{video:{facingMode:{exact:'environment'}}},{video:{facingMode:'environment'}}]
+    :[{video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}}},{video:{facingMode:'user'}},{video:true}];
+  let stream=null,lastErr=null;
+  for(const c of list){
+    try{stream=await navigator.mediaDevices.getUserMedia(c);break;}
+    catch(err){lastErr=err;if(err.name!=='OverconstrainedError'&&err.name!=='NotFoundError')break;}
+  }
+  if(!stream){const info=ERR[lastErr?.name]||ERR.DEFAULT;showError(info.title,lastErr?.name||'Error',info.msg,'');}
+  return stream;
+}
+
+async function attachStream(stream){
+  const video=document.getElementById('video');
+  video.srcObject=stream;video.style.display='block';
+  await new Promise((res,rej)=>{
+    if(video.readyState>=HTMLMediaElement.HAVE_METADATA){res();return;}
+    video.onloadedmetadata=res;video.onerror=rej;
+    setTimeout(()=>rej(new Error('metadata timeout')),8000);
+  });
+  await video.play().catch(()=>{});
+  resizeCanvas();
+}
+
+function applyMirrorCSS(facingMode){
+  // Front camera: mirror video so it feels like a selfie mirror. Rear: no mirror.
+  // Canvas has NO CSS transform; lmPx() flips coords in JS to match the video display.
+  const isFront = facingMode === 'user';
+  document.getElementById('video').classList.toggle('mirror', isFront);
+}
+
+// ═══════════════════════════════════════════
+//  Camera start & flip
+// ═══════════════════════════════════════════
+async function handleStart(){
+  hideError();
+  const btn=document.getElementById('startBtn');
+  btn.disabled=true;btn.classList.add('loading');
+  btn.innerHTML='<span class="btn-icon">⟳</span> 載入中…';
+  try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}
+  btn.innerHTML='<span class="btn-icon">⟳</span> 初始化 AI…';
+  try{await initPose();}catch(err){
+    showError('AI 模型載入失敗',err.name,'MediaPipe 初始化失敗：'+err.message,'確認網路可存取 cdn.jsdelivr.net');return;
+  }
+  const stream=await acquireStream(currentFacingMode);
+  if(!stream)return;
+  activeStream=stream;
+  applyMirrorCSS(currentFacingMode);
+  await attachStream(stream);
+  startRAFLoop();
+  document.getElementById('launchScreen').style.display='none';
+  document.getElementById('statusBadge').textContent='ACTIVE';
+  document.getElementById('liveBadge').style.display='block';
+  document.getElementById('exportBtn').disabled=false;
+  document.getElementById('triggerCalBtn').disabled=false;
+  document.getElementById('flipBtn').style.display='flex';
+  if(!sessionStart)sessionStart=Date.now();
+}
+
+async function flipCamera(){
+  if(isSwitching)return;
+  isSwitching=true;
+  const btn=document.getElementById('flipBtn');
+  btn.disabled=true;btn.classList.add('switching');
+  if(calPhase==='open'||calPhase==='countdown')closeCalOverlay();
+  stopRAFLoop();
+  const oldStream=activeStream;activeStream=null;
+  await hardStopStream(oldStream);
+  currentFacingMode=currentFacingMode==='user'?'environment':'user';
+  applyMirrorCSS(currentFacingMode);
+  emaNeck=null;emaTrunk=null;emaUAL=null;emaUAR=null;emaLAL=null;emaLAR=null;emaWRL=null;emaWRR=null;
+  const newStream=await acquireStream(currentFacingMode);
+  if(!newStream){
+    currentFacingMode=currentFacingMode==='user'?'environment':'user';
+    applyMirrorCSS(currentFacingMode);
+    btn.disabled=false;btn.classList.remove('switching');isSwitching=false;return;
+  }
+  activeStream=newStream;
+  await attachStream(newStream);
+  startRAFLoop();
+  btn.disabled=false;btn.classList.remove('switching');isSwitching=false;
+}
+
+// ═══════════════════════════════════════════
+//  EMA
+// ═══════════════════════════════════════════
+function toggleEMA(){
+  emaEnabled=!emaEnabled;
+  const b=document.getElementById('emaToggle');
+  b.textContent=emaEnabled?'ON':'OFF';
+  b.className='ema-toggle'+(emaEnabled?' active':'');
+  document.getElementById('emaBadge').style.opacity=emaEnabled?'1':'0.3';
+  emaNeck=null;emaTrunk=null;emaUAL=null;emaUAR=null;emaLAL=null;emaLAR=null;emaWRL=null;emaWRR=null;
+}
+function ema(prev,cur,a){return prev===null?cur:a*cur+(1-a)*prev;}
+
+// ═══════════════════════════════════════════
+//  Calibration
+// ═══════════════════════════════════════════
+function openCalOverlay(){
+  calPhase='open';calFrameBuf=[];
+  if(calTimer){clearInterval(calTimer);calTimer=null;}
+  document.getElementById('calCountdown').style.display='none';
+  document.getElementById('calDoneMsg').style.display='none';
+  document.getElementById('calStartBtn').style.display='block';
+  document.getElementById('calStartBtn').disabled=true;
+  document.getElementById('calCancelBtn').textContent='取消';
+  document.getElementById('calStatus').textContent='— 偵測入鏡中 —';
+  ['chkEar','chkSh','chkElb','chkWr','chkHip'].forEach(id=>{document.getElementById(id).className='check-dot';});
+  document.getElementById('calOverlay').style.display='flex';
+}
+
+function closeCalOverlay(){
+  if(calTimer){clearInterval(calTimer);calTimer=null;}
+  calPhase=calNeckBase||calTrunkBase?'done':'idle';
+  document.getElementById('calOverlay').style.display='none';
+  calFrameBuf=[];
+}
+
+function startCalibration(){
+  if(calPhase!=='open')return;
+  calPhase='countdown';calCountVal=3;calFrameBuf=[];
+  document.getElementById('calStartBtn').style.display='none';
+  const cdEl=document.getElementById('calCountdown');
+  cdEl.textContent='3';cdEl.style.display='block';
+  document.getElementById('calStatus').textContent='保持標準坐姿不動…';
+  calTimer=setInterval(()=>{
+    calCountVal--;
+    if(calCountVal>0){cdEl.textContent=calCountVal;}
+    else{clearInterval(calTimer);calTimer=null;applyCalibration();}
+  },1000);
+}
+
+function applyCalibration(){
+  if(calFrameBuf.length===0){
+    document.getElementById('calStatus').textContent='⚠ 無法捕捉關鍵點，請重試';
+    document.getElementById('calStartBtn').style.display='block';calPhase='open';return;
+  }
+  const avgN=calFrameBuf.reduce((s,f)=>s+f.neck,0)/calFrameBuf.length;
+  const avgT=calFrameBuf.reduce((s,f)=>s+f.trunk,0)/calFrameBuf.length;
+  calNeckBase=avgN;calTrunkBase=avgT;calPhase='done';
+  emaNeck=null;emaTrunk=null;
+  document.getElementById('calCountdown').style.display='none';
+  document.getElementById('calDoneMsg').style.display='block';
+  document.getElementById('calStatus').textContent='基準角度已鎖定';
+  document.getElementById('calCancelBtn').textContent='關閉';
+  const card=document.getElementById('calStateCard');
+  card.textContent='✓ 已校準 — 以初始坐姿為 0° 基準';
+  card.className='cal-state-card calibrated';
+  document.getElementById('calOffsetRow').style.display='flex';
+  document.getElementById('calNeckOff').textContent=avgN.toFixed(1)+'°';
+  document.getElementById('calTrunkOff').textContent=avgT.toFixed(1)+'°';
+  document.getElementById('calBadge').style.display='block';
+  setTimeout(closeCalOverlay,1500);
+}
+
+function tickCalOverlay(hasEar,hasSh,hasElb,hasWr,hasHip,neckRaw,trunkRaw){
+  if(calPhase!=='open'&&calPhase!=='countdown')return;
+  const dot=(id,ok)=>{document.getElementById(id).className='check-dot'+(ok?' ok':' bad');};
+  dot('chkEar',hasEar);dot('chkSh',hasSh);dot('chkElb',hasElb);dot('chkWr',hasWr);dot('chkHip',hasHip);
+  const allOk=hasEar&&hasSh&&hasHip; // elbow/wrist optional for calibration
+  if(calPhase==='open'){
+    document.getElementById('calStartBtn').disabled=!allOk;
+    document.getElementById('calStatus').textContent=allOk?'✓ 入鏡足夠，可開始校準':'⚠ 請調整使耳、肩、髖皆入鏡';
+  }
+  if(calPhase==='countdown'&&allOk){
+    calFrameBuf.push({neck:neckRaw,trunk:trunkRaw});
+    if(calFrameBuf.length>15)calFrameBuf.shift();
+  }
+}
+
+// ═══════════════════════════════════════════
+//  Math helpers
+// ═══════════════════════════════════════════
+Math.degrees=r=>r*180/Math.PI;
+
+function verticalAngle(ax,ay,bx,by){
+  const dx=bx-ax,dy=by-ay,mag=Math.sqrt(dx*dx+dy*dy);
+  if(mag<1e-6)return 0;
+  return Math.degrees(Math.acos(Math.max(-1,Math.min(1,dy/mag))));
+}
+
+// Angle between two vectors (a→b) and (b→c)
+function jointAngle(ax,ay,bx,by,cx,cy){
+  const v1x=ax-bx,v1y=ay-by,v2x=cx-bx,v2y=cy-by;
+  const dot=v1x*v2x+v1y*v2y;
+  const mag1=Math.sqrt(v1x*v1x+v1y*v1y),mag2=Math.sqrt(v2x*v2x+v2y*v2y);
+  if(mag1<1e-6||mag2<1e-6)return 0;
+  return Math.degrees(Math.acos(Math.max(-1,Math.min(1,dot/(mag1*mag2)))));
+}
+
+function midPt(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2};}
+
+// ═══════════════════════════════════════════
+//  RULA Scoring — Full (RULA 2000 worksheet)
+// ═══════════════════════════════════════════
+
+// GROUP B
+function neckScore(a){
+  if(a<=10)return 1;
+  if(a<=20)return 2;
+  if(a<=35)return 3;
+  return 4;
+}
+function trunkScore(a){
+  if(a<=10)return 1;
+  if(a<=20)return 2;
+  if(a<=60)return 3;
+  return 4;
+}
+// Leg score: seated = 1 (supported), standing = 2. We always assume seated=1.
+function legScore(){return 1;}
+
+// GROUP B table (neck×trunk×leg) → posture score B
+// Standard RULA Table C (simplified 4×4×2 lookup)
+const TABLE_B=[
+  // leg=1, trunk 1-4, neck 1-4
+  [[1,2,2,3],[2,3,3,3],[3,3,3,4],[5,5,5,6]],
+  // leg=2 (not used here)
+  [[3,3,3,4],[3,3,3,4],[4,4,4,5],[5,5,6,6]]
+];
+function groupBScore(ns,ts,ls){
+  const r=Math.min(ts,4)-1, c=Math.min(ns,4)-1, l=Math.min(ls,2)-1;
+  return TABLE_B[l][r][c]||ts; // fallback
+}
+
+// GROUP A
+// Upper arm: angle from torso vertical (shoulder → elbow vs vertical)
+function upperArmScore(a){
+  if(a<20)return 1;
+  if(a<=45)return 2;
+  if(a<=90)return 3;
+  return 4;
+}
+// Lower arm: elbow flexion angle (shoulder-elbow-wrist)
+function lowerArmScore(a){
+  if(a>=60&&a<=100)return 1;
+  return 2;
+}
+// Wrist: deviation from neutral (elbow-wrist-hand)
+function wristScore(a){
+  if(a<15)return 1;
+  if(a<=30)return 2;
+  return 3;
+}
+
+// GROUP A table (upper×lower×wrist) → posture score A
+// Standard RULA Table A (4×2×3 = 24 cells)
+const TABLE_A=[
+  // upperArm=1
+  [[1,2,2],[2,2,3],[2,3,3],[3,3,3]],
+  // upperArm=2
+  [[2,2,3],[3,3,3],[3,3,4],[4,4,4]],
+  // upperArm=3
+  [[3,3,4],[4,4,4],[4,4,5],[5,5,6]],
+  // upperArm=4
+  [[4,4,5],[5,5,5],[5,6,6],[6,7,7]]
+];
+function groupAScore(uas,las,ws){
+  const u=Math.min(uas,4)-1,l=Math.min(las,2)-1,w=Math.min(ws,3)-1;
+  return TABLE_A[u][l][w]||uas;
+}
+
+// Final grand score (Table C — A×B lookup)
+const TABLE_C=[
+//   B: 1  2  3  4  5  6  7
+  [   1, 2, 3, 3, 4, 5, 5], // A=1
+  [   2, 2, 3, 4, 4, 5, 5], // A=2
+  [   3, 3, 3, 4, 4, 5, 6], // A=3
+  [   3, 3, 3, 4, 5, 6, 6], // A=4
+  [   4, 4, 4, 5, 6, 7, 7], // A=5
+  [   4, 4, 5, 6, 6, 7, 7], // A=6
+  [   5, 5, 6, 6, 7, 7, 7], // A=7
+  [   5, 5, 6, 7, 7, 7, 7], // A=8 (clamp)
+];
+function grandScore(gA,gB){
+  const r=Math.min(gA,8)-1,c=Math.min(gB,7)-1;
+  return TABLE_C[r][c]||Math.max(gA,gB);
+}
+
+function rulaInterpret(score){
+  if(score<=2)return{lv:'✓ 姿勢良好',act:'繼續保持良好坐姿',cls:'good'};
+  if(score<=4)return{lv:'⚠ 建議調整',act:'考慮調整座位或坐姿',cls:'warn'};
+  if(score<=6)return{lv:'⚠ 需要改善',act:'應盡快進行人因調查',cls:'danger'};
+  return{lv:'✗ 立即調整',act:'坐姿危險，立即採取矯正措施！',cls:'danger'};
+}
+
+// ═══════════════════════════════════════════
+//  Beep
+// ═══════════════════════════════════════════
+function beep(){
+  if(!audioCtx)return;
+  try{
+    if(audioCtx.state==='suspended')audioCtx.resume();
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.connect(g);g.connect(audioCtx.destination);
+    o.type='sine';o.frequency.value=880;
+    g.gain.setValueAtTime(0.5,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.5);
+    o.start();o.stop(audioCtx.currentTime+0.5);
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════════
+//  Canvas
+// ═══════════════════════════════════════════
+const video=document.getElementById('video');
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+function resizeCanvas(){
+  const r=video.getBoundingClientRect();
+  canvas.width=r.width||video.videoWidth||640;
+  canvas.height=r.height||video.videoHeight||480;
+}
+window.addEventListener('resize',resizeCanvas);
+
+function drawNode(x,y,col,r=6){
+  ctx.beginPath();ctx.arc(x,y,r+2,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,.55)';ctx.fill();
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=12;ctx.fill();ctx.shadowBlur=0;
+}
+function drawLine(ax,ay,bx,by,col,w=3){
+  ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);
+  ctx.strokeStyle=col;ctx.lineWidth=w;ctx.lineCap='round';
+  ctx.shadowColor=col;ctx.shadowBlur=8;ctx.stroke();ctx.shadowBlur=0;
+}
+function drawArc(cx,cy,deg,col,r=42){
+  if(!isFinite(deg)||deg<=0)return;
+  ctx.beginPath();ctx.moveTo(cx,cy);
+  ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+Math.min(deg,180)*Math.PI/180);
+  ctx.closePath();
+  ctx.fillStyle=col+'28';ctx.fill();
+  ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+Math.min(deg,180)*Math.PI/180);
+  ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.stroke();
+}
+function drawLabel(x,y,text,col){
+  ctx.font="bold 12px 'Share Tech Mono',monospace";
+  ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillText(text,x+1,y+1);
+  ctx.fillStyle=col;ctx.fillText(text,x,y);
+}
+// lmPx: converts MediaPipe normalised [0,1] landmark to canvas pixel coords.
+// MediaPipe's lm.x=0 is the LEFT edge of the raw camera frame.
+// Front cam: video is CSS-mirrored (scaleX -1), so we must also flip X on canvas.
+// Rear cam:  video is not mirrored, raw coords map straight.
+function lmPx(lm){
+  const x = currentFacingMode === 'user'
+    ? (1 - lm.x) * canvas.width   // flip to match mirrored video
+    : lm.x * canvas.width;         // no flip for rear cam
+  return { x, y: lm.y * canvas.height };
+}
+
+// ═══════════════════════════════════════════
+//  UI updaters
+// ═══════════════════════════════════════════
+function aCls(v,w,d){return v>=d?'danger':v>=w?'warn':'';}
+
+function setAngle(valId,barId,rawLblId,smoothed,raw,w,d,maxBar=90){
+  const cls=aCls(smoothed,w,d);
+  const el=document.getElementById(valId);
+  if(smoothed===null||!isFinite(smoothed)){el.textContent='N/A';el.className='angle-val na';}
+  else{el.textContent=smoothed.toFixed(1);el.className='angle-val '+cls;}
+  const bar=document.getElementById(barId);
+  bar.style.width=Math.min((smoothed===null||!isFinite(smoothed)?0:smoothed)/maxBar*100,100)+'%';
+  bar.className='bar-fill '+cls;
+  if(rawLblId){
+    const rawEl=document.getElementById(rawLblId);
+    if(rawEl)rawEl.textContent='原始: '+(raw===null||!isFinite(raw)?'--':raw.toFixed(1))+'°';
+  }
+}
+
+function setChip(chipId,valId,score,cls){
+  document.getElementById(chipId).className='score-chip '+(cls||'');
+  const el=document.getElementById(valId);
+  if(score===null){el.textContent='-';el.className='chip-val na';}
+  else{el.textContent=score;el.className='chip-val '+(cls||'');}
+}
+
+function setRula(grand,gA,gB,interp){
+  const card=document.getElementById('rulaCard');
+  card.className='rula-grand '+(interp?interp.cls:'');
+  const n=document.getElementById('rulaNum');
+  if(grand===null){n.textContent='-';n.className='rula-grand-num na';}
+  else{n.textContent=grand;n.className='rula-grand-num '+(interp?interp.cls:'');}
+  const lv=document.getElementById('rulaLv');
+  lv.textContent=interp?interp.lv:'等待偵測';
+  lv.className='rula-lv '+(interp?interp.cls:'');
+  document.getElementById('rulaAct').textContent=interp?interp.act:'請啟動攝影機';
+  document.getElementById('rulaA').textContent=gA===null?'-':gA;
+  document.getElementById('rulaB').textContent=gB===null?'-':gB;
+  document.getElementById('rulaGrand').textContent=grand===null?'-':grand;
+}
+
+function fmt(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(Math.floor(s%60)).padStart(2,'0');}
+
+// ═══════════════════════════════════════════
+//  Chart
+// ═══════════════════════════════════════════
+const cc=document.getElementById('chartCanvas');
+const cct=cc.getContext('2d');
+function drawChart(){
+  const w=cc.width,h=cc.height,MAX=90;
+  cct.clearRect(0,0,w,h);
+  cct.fillStyle='#0a0f15';cct.fillRect(0,0,w,h);
+  // danger line at 20°
+  const ty=h-(20/MAX)*h;
+  cct.beginPath();cct.moveTo(0,ty);cct.lineTo(w,ty);
+  cct.strokeStyle='rgba(255,34,68,.3)';cct.lineWidth=1;cct.setLineDash([4,4]);cct.stroke();cct.setLineDash([]);
+  function line(hist,col){
+    if(hist.length<2)return;
+    cct.beginPath();
+    hist.forEach((v,i)=>{const x=i/(HIST_LEN-1)*w,y=h-Math.min(v,MAX)/MAX*h;i?cct.lineTo(x,y):cct.moveTo(x,y);});
+    cct.strokeStyle=col;cct.lineWidth=1.5;cct.stroke();
+  }
+  line(neckHist,'#00e5ff');line(trunkHist,'#ffcc00');
+  line(uaHist,'#ff8800');line(laHist,'#cc44ff');
+}
+
+// ═══════════════════════════════════════════
+//  Session timer
+// ═══════════════════════════════════════════
+setInterval(()=>{
+  if(!sessionStart)return;
+  const el=(Date.now()-sessionStart)/1000;
+  document.getElementById('tSession').textContent=fmt(el);
+  document.getElementById('tBad').textContent=fmt(badTotal);
+  document.getElementById('tPct').textContent=(el<1?0:badTotal/el*100).toFixed(1)+'%';
+},500);
+
+// ═══════════════════════════════════════════
+//  CSV export
+// ═══════════════════════════════════════════
+function exportCSV(){
+  if(dataLog.length===0){alert('尚無數據，請先啟動監測。');return;}
+  const header=[
+    'Timestamp_ms','Elapsed_s',
+    'Neck_Raw_deg','Neck_EMA_deg','Neck_Cal_deg',
+    'Trunk_Raw_deg','Trunk_EMA_deg','Trunk_Cal_deg',
+    'UA_L_deg','UA_R_deg','LA_L_deg','LA_R_deg','WR_L_deg','WR_R_deg',
+    'Score_Neck','Score_Trunk','Score_UA','Score_LA','Score_WR',
+    'GroupA','GroupB','RULA_Grand',
+    'Is_Bad','Bad_Streak_s','Calibrated'
+  ].join(',');
+  const rows=dataLog.map(d=>[
+    d.ts,d.el.toFixed(2),
+    d.nR.toFixed(2),d.nE.toFixed(2),d.nC.toFixed(2),
+    d.tR.toFixed(2),d.tE.toFixed(2),d.tC.toFixed(2),
+    d.uaL!==null?d.uaL.toFixed(2):'',d.uaR!==null?d.uaR.toFixed(2):'',
+    d.laL!==null?d.laL.toFixed(2):'',d.laR!==null?d.laR.toFixed(2):'',
+    d.wrL!==null?d.wrL.toFixed(2):'',d.wrR!==null?d.wrR.toFixed(2):'',
+    d.sNeck,d.sTrunk,d.sUA,d.sLA,d.sWR,
+    d.gA,d.gB,d.grand,
+    d.bad?1:0,d.streak.toFixed(2),d.cal?1:0
+  ].join(','));
+  const csv='\uFEFF'+[header,...rows].join('\n');
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  const a=document.createElement('a');
+  a.href=url;a.download='RULA_full_'+new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════
+//  Main pose callback
+// ═══════════════════════════════════════════
+function onPoseResults(results){
+  resizeCanvas();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const now=Date.now();
+  fps=Math.round(1000/(now-prevFrameTs+1));
+  prevFrameTs=now;
+  document.getElementById('fpsTag').textContent=fps+' FPS';
+
+  if(!results.poseLandmarks){
+    document.getElementById('noDetect').style.display='block';
+    document.getElementById('dangerVfx').classList.remove('on');
+    document.getElementById('warnBanner').style.display='none';
+    badStart=null;return;
+  }
+  document.getElementById('noDetect').style.display='none';
+
+  const lm=results.poseLandmarks;
+  const vis=i=>lm[i]&&lm[i].visibility>0.4;
+
+  // ── Landmarks ──────────────────────────────
+  const lEar=vis(7)?lmPx(lm[7]):null, rEar=vis(8)?lmPx(lm[8]):null;
+  const lSh=vis(11)?lmPx(lm[11]):null,  rSh=vis(12)?lmPx(lm[12]):null;
+  const lElb=vis(13)?lmPx(lm[13]):null, rElb=vis(14)?lmPx(lm[14]):null;
+  const lWr=vis(15)?lmPx(lm[15]):null,  rWr=vis(16)?lmPx(lm[16]):null;
+  // hand tips for wrist deviation
+  const lIdx=vis(19)?lmPx(lm[19]):null, rIdx=vis(20)?lmPx(lm[20]):null;
+  const lPinky=vis(17)?lmPx(lm[17]):null, rPinky=vis(18)?lmPx(lm[18]):null;
+  const lHip=vis(23)?lmPx(lm[23]):null, rHip=vis(24)?lmPx(lm[24]):null;
+
+  if(!lSh&&!rSh)return;
+
+  const shM=(lSh&&rSh)?midPt(lSh,rSh):(lSh||rSh);
+  const hiM=(lHip&&rHip)?midPt(lHip,rHip):(lHip||rHip);
+  const earM=(lEar&&rEar)?midPt(lEar,rEar):(lEar||rEar);
+
+  // ── Group B angles ─────────────────────────
+  const neckRaw=earM?verticalAngle(earM.x,earM.y,shM.x,shM.y):0;
+  const trunkRaw=hiM?verticalAngle(shM.x,shM.y,hiM.x,hiM.y):0;
+
+  const hasEar=!!(lEar||rEar),hasSh=!!(lSh&&rSh),hasHip=!!(lHip&&rHip);
+  const hasElb=!!(lElb||rElb),hasWr=!!(lWr||rWr);
+
+  tickCalOverlay(hasEar,hasSh,hasElb,hasWr,hasHip,neckRaw,trunkRaw);
+
+  const neckCal=calPhase==='done'?Math.max(0,neckRaw-calNeckBase):neckRaw;
+  const trunkCal=calPhase==='done'?Math.max(0,trunkRaw-calTrunkBase):trunkRaw;
+
+  if(calPhase==='done'&&!calRefShM){
+    calRefShM={...shM};calRefEarM=earM?{...earM}:null;calRefHiM=hiM?{...hiM}:null;
+  }
+  if(calPhase!=='done'){calRefShM=null;}
+
+  emaNeck=ema(emaEnabled?emaNeck:null,neckCal,EMA_ALPHA);
+  emaTrunk=ema(emaEnabled?emaTrunk:null,trunkCal,EMA_ALPHA);
+  const nA=emaEnabled?emaNeck:neckCal;
+  const tA=emaEnabled?emaTrunk:trunkCal;
+
+  // ── Group A angles ─────────────────────────
+  // Upper arm: angle between shoulder→elbow vector and downward vertical
+  // (angle from body trunk line, using shoulder as pivot)
+  let uaL=null,uaR=null,laL=null,laR=null,wrL=null,wrR=null;
+
+  if(lSh&&lElb){
+    // Upper arm: angle from trunk vertical. Use trunk direction as reference.
+    // Simple: angle of shoulder→elbow vector from pointing downward (vertical)
+    uaL=verticalAngle(lSh.x,lSh.y,lElb.x,lElb.y);
+    // Adjust: if elbow is above shoulder, it's extension (also scored as per RULA)
+    if(lElb.y<lSh.y)uaL=-uaL; // negative = raised above shoulder
+    uaL=Math.abs(uaL); // RULA uses absolute deviation from resting
+  }
+  if(rSh&&rElb){
+    uaR=verticalAngle(rSh.x,rSh.y,rElb.x,rElb.y);
+    if(rElb.y<rSh.y)uaR=-uaR;
+    uaR=Math.abs(uaR);
+  }
+  // Lower arm: elbow flexion = angle shoulder-elbow-wrist
+  if(lSh&&lElb&&lWr) laL=jointAngle(lSh.x,lSh.y,lElb.x,lElb.y,lWr.x,lWr.y);
+  if(rSh&&rElb&&rWr) laR=jointAngle(rSh.x,rSh.y,rElb.x,rElb.y,rWr.x,rWr.y);
+  // Wrist: angle elbow-wrist-hand (deviation from neutral = straight line = 180°, so deviation = |180-angle|)
+  const lHand=lIdx||lPinky;const rHand=rIdx||rPinky;
+  if(lElb&&lWr&&lHand){const raw=jointAngle(lElb.x,lElb.y,lWr.x,lWr.y,lHand.x,lHand.y);wrL=Math.abs(180-raw);}
+  if(rElb&&rWr&&rHand){const raw=jointAngle(rElb.x,rElb.y,rWr.x,rWr.y,rHand.x,rHand.y);wrR=Math.abs(180-raw);}
+
+  // EMA on Group A
+  emaUAL=ema(emaEnabled?emaUAL:null,uaL,EMA_ALPHA);
+  emaUAR=ema(emaEnabled?emaUAR:null,uaR,EMA_ALPHA);
+  emaLAL=ema(emaEnabled?emaLAL:null,laL,EMA_ALPHA);
+  emaLAR=ema(emaEnabled?emaLAR:null,laR,EMA_ALPHA);
+  emaWRL=ema(emaEnabled?emaWRL:null,wrL,EMA_ALPHA);
+  emaWRR=ema(emaEnabled?emaWRR:null,wrR,EMA_ALPHA);
+
+  const uaLA=emaEnabled?emaUAL:uaL;
+  const uaRA=emaEnabled?emaUAR:uaR;
+  const laLA=emaEnabled?emaLAL:laL;
+  const laRA=emaEnabled?emaLAR:laR;
+  const wrLA=emaEnabled?emaWRL:wrL;
+  const wrRA=emaEnabled?emaWRR:wrR;
+
+  // ── RULA Scores ────────────────────────────
+  const sNeck=neckScore(nA);
+  const sTrunk=trunkScore(tA);
+  const sLeg=legScore();
+  const gB=groupBScore(sNeck,sTrunk,sLeg);
+
+  // For Group A use worst-side (max) upper arm angle
+  const uaWorst=uaLA!==null&&uaRA!==null?Math.max(uaLA,uaRA):uaLA??uaRA??0;
+  const laWorst=laLA!==null&&laRA!==null
+    ?[laLA,laRA].reduce((w,v)=>(lowerArmScore(v)>lowerArmScore(w)?v:w))
+    :laLA??laRA??80; // default: mid-range (score=1)
+  const wrWorst=wrLA!==null&&wrRA!==null?Math.max(wrLA,wrRA):wrLA??wrRA??0;
+
+  const sUA=upperArmScore(uaWorst);
+  const sLA=lowerArmScore(laWorst);
+  const sWR=wristScore(wrWorst);
+  const gA=groupAScore(sUA,sLA,sWR);
+  const grand=grandScore(gA,gB);
+  const interp=rulaInterpret(grand);
+
+  // ── Colors ─────────────────────────────────
+  const G='#00ff88',Y='#ffcc00',R='#ff2244',B='#00e5ff',O='#ff8800';
+  const nc=nA>=NECK_DANGER?R:nA>=NECK_WARN?Y:G;
+  const tc=tA>=TRUNK_DANGER?R:tA>=TRUNK_WARN?Y:G;
+  const uaCol=uaWorst>=UA_DANGER?R:uaWorst>=UA_WARN?Y:G;
+  const laCol=(laWorst<LA_LOW||laWorst>LA_HIGH)?Y:G;
+  const wrCol=wrWorst>=WR_WARN?Y:G;
+
+  // ── Draw skeleton ──────────────────────────
+  // Trunk & neck lines
+  if(hiM) drawLine(shM.x,shM.y,hiM.x,hiM.y,tc,4);
+  if(earM) drawLine(earM.x,earM.y,shM.x,shM.y,nc,4);
+  if(lSh&&rSh) drawLine(lSh.x,lSh.y,rSh.x,rSh.y,'#c8a020',2);
+  if(lHip&&rHip) drawLine(lHip.x,lHip.y,rHip.x,rHip.y,'#c8a020',2);
+
+  // Arms
+  if(lSh&&lElb) drawLine(lSh.x,lSh.y,lElb.x,lElb.y,uaCol,3);
+  if(rSh&&rElb) drawLine(rSh.x,rSh.y,rElb.x,rElb.y,uaCol,3);
+  if(lElb&&lWr) drawLine(lElb.x,lElb.y,lWr.x,lWr.y,laCol,3);
+  if(rElb&&rWr) drawLine(rElb.x,rElb.y,rWr.x,rWr.y,laCol,3);
+  if(lWr&&lHand) drawLine(lWr.x,lWr.y,lHand.x,lHand.y,wrCol,2);
+  if(rWr&&rHand) drawLine(rWr.x,rWr.y,rHand.x,rHand.y,wrCol,2);
+
+  // Arcs
+  if(earM) drawArc(shM.x,shM.y,nA,nc,40);
+  if(hiM) drawArc(shM.x,shM.y,tA,tc,60);
+
+  // Nodes
+  [lEar,rEar].forEach(p=>p&&drawNode(p.x,p.y,nc,5));
+  [lSh,rSh].forEach(p=>p&&drawNode(p.x,p.y,'#e0c020',7));
+  [lElb,rElb].forEach(p=>p&&drawNode(p.x,p.y,uaCol,6));
+  [lWr,rWr].forEach(p=>p&&drawNode(p.x,p.y,wrCol,5));
+  [lHip,rHip].forEach(p=>p&&drawNode(p.x,p.y,tc,6));
+
+  // Labels
+  const mark=calPhase==='done'?'Δ':'';
+  if(earM) drawLabel((earM.x+shM.x)/2+12,(earM.y+shM.y)/2,mark+nA.toFixed(1)+'°',nc);
+  if(hiM) drawLabel((shM.x+hiM.x)/2+12,(shM.y+hiM.y)/2,mark+tA.toFixed(1)+'°',tc);
+  if(lSh&&lElb) drawLabel((lSh.x+lElb.x)/2-42,(lSh.y+lElb.y)/2,uaLA!==null?uaLA.toFixed(0)+'°':'-',uaCol);
+  if(rSh&&rElb) drawLabel((rSh.x+rElb.x)/2+8,(rSh.y+rElb.y)/2,uaRA!==null?uaRA.toFixed(0)+'°':'-',uaCol);
+  if(lElb&&lWr) drawLabel((lElb.x+lWr.x)/2-36,(lElb.y+lWr.y)/2,laLA!==null?laLA.toFixed(0)+'°':'-',laCol);
+  if(rElb&&rWr) drawLabel((rElb.x+rWr.x)/2+6,(rElb.y+rWr.y)/2,laRA!==null?laRA.toFixed(0)+'°':'-',laCol);
+
+  // RULA grand score overlay (top-left of canvas)
+  const sc=grand;
+  const scCol=interp.cls==='good'?G:interp.cls==='warn'?Y:R;
+  ctx.font="bold 14px 'Share Tech Mono',monospace";
+  ctx.fillStyle='rgba(0,0,0,.6)';
+  ctx.fillRect(10,10,105,32);
+  ctx.strokeStyle=scCol;ctx.lineWidth=1;ctx.strokeRect(10,10,105,32);
+  ctx.fillStyle=scCol;
+  ctx.fillText('RULA '+sc+' — '+interp.lv.replace(/[✓⚠✗]\s*/,''),16,31);
+
+  // ── Update UI ──────────────────────────────
+  const isBad=grand>=5;
+
+  setAngle('neckVal','neckBar','neckRawLbl',nA,neckRaw,NECK_WARN,NECK_DANGER);
+  setAngle('trunkVal','trunkBar','trunkRawLbl',tA,trunkRaw,TRUNK_WARN,TRUNK_DANGER);
+  setAngle('uaLVal','uaLBar',null,uaLA,uaL,UA_WARN,UA_DANGER,90);
+  setAngle('uaRVal','uaRBar',null,uaRA,uaR,UA_WARN,UA_DANGER,90);
+  setAngle('laLVal','laLBar',null,laLA,laL,LA_LOW,150,180); // bar goes to 180
+  setAngle('laRVal','laRBar',null,laRA,laR,LA_LOW,150,180);
+  setAngle('wrLVal','wrLBar',null,wrLA,wrL,WR_WARN,WR_WARN*2,60);
+  setAngle('wrRVal','wrRBar',null,wrRA,wrR,WR_WARN,WR_WARN*2,60);
+
+  // Score chips
+  const cls=s=>s<=1?'good':s<=2?'warn':'danger';
+  setChip('chipNeck','chipNeckVal',sNeck,cls(sNeck));
+  setChip('chipTrunk','chipTrunkVal',sTrunk,cls(sTrunk));
+  setChip('chipLeg','chipLegVal',sLeg,'good');
+  setChip('chipUA','chipUAVal',sUA,cls(sUA));
+  setChip('chipLA','chipLAVal',sLA,cls(sLA));
+  setChip('chipWR','chipWRVal',sWR,cls(sWR));
+  setRula(grand,gA,gB,interp);
+
+  document.getElementById('dangerVfx').classList.toggle('on',isBad);
+  document.getElementById('warnBanner').style.display=isBad?'block':'none';
+  if(isBad)document.getElementById('warnBanner').textContent='⚠ RULA '+grand+' — '+interp.lv;
+
+  // Streak / beep
+  const nowS=now/1000;let badStreak=0;
+  if(isBad){
+    if(!badStart)badStart=nowS;
+    badStreak=nowS-badStart;
+    if(badStreak>=BEEP_THRESH&&nowS-lastBeep>=BEEP_CD){beep();lastBeep=nowS;}
+    const pct=Math.min(badStreak/BEEP_THRESH*100,100);
+    const bb=document.getElementById('beepBar');
+    bb.style.width=pct+'%';bb.className='beep-bar-fill'+(pct>=100?' alert':'');
+    const sv=document.getElementById('streakVal');
+    sv.textContent=badStreak.toFixed(1)+'s';sv.className='bad-streak-val'+(badStreak>=BEEP_THRESH?' fired':'');
+    if(fps>0)badTotal+=1/fps;
+  } else {
+    badStart=null;
+    document.getElementById('beepBar').style.width='0%';
+    document.getElementById('beepBar').className='beep-bar-fill';
+    document.getElementById('streakVal').textContent='0.0s';
+    document.getElementById('streakVal').className='bad-streak-val';
+  }
+
+  // History
+  const uaAvg=uaLA!==null&&uaRA!==null?(uaLA+uaRA)/2:uaLA??uaRA??0;
+  const laAvg=laLA!==null&&laRA!==null?(laLA+laRA)/2:laLA??laRA??80;
+  neckHist.push(nA);if(neckHist.length>HIST_LEN)neckHist.shift();
+  trunkHist.push(tA);if(trunkHist.length>HIST_LEN)trunkHist.shift();
+  uaHist.push(uaAvg);if(uaHist.length>HIST_LEN)uaHist.shift();
+  laHist.push(Math.abs(laAvg-90));if(laHist.length>HIST_LEN)laHist.shift(); // deviation from ideal 90°
+  drawChart();
+
+  // Data log
+  if(sessionStart){
+    dataLog.push({
+      ts:now,el:(now-sessionStart)/1000,
+      nR:neckRaw,nE:isFinite(emaNeck)?emaNeck:neckRaw,nC:neckCal,
+      tR:trunkRaw,tE:isFinite(emaTrunk)?emaTrunk:trunkRaw,tC:trunkCal,
+      uaL:uaLA,uaR:uaRA,laL:laLA,laR:laRA,wrL:wrLA,wrR:wrRA,
+      sNeck,sTrunk,sUA,sLA,sWR,gA,gB,grand,
+      bad:isBad,streak:badStreak,cal:calPhase==='done'
+    });
+    if(dataLog.length>LOG_MAX)dataLog.shift();
+    document.getElementById('recordCount').textContent=dataLog.length+' 幀';
+  }
+}
+</script>
+
+</body>
+</html>
